@@ -10,4 +10,4 @@ index.html
 vite.config.js
 yarn.lock
 src/*
-!src/field.mjs
+!src/sql.mjs
