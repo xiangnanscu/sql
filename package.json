@@ -1,6 +1,6 @@
 {
   "name": "@xiangnanscu/sql",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "sql",
   "main": "src/sql.mjs",
   "scripts": {

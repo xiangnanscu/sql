@@ -1,5 +1,28 @@
 
 let NULL = {}
+const stringFormat = (s, ...varargs) => {
+  let status = 0;
+  let res = [];
+  let j = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "%") {
+      if (status === 0) {
+        status = 1;
+      } else if (status === 1) {
+        status = 0;
+        res.push("%");
+      }
+    } else if (c === "s" && status === 1) {
+      j = j + 1;
+      res.push(varargs[j]);
+      status = 0;
+    } else {
+      res.push(c);
+    }
+  }
+  return res.join("");
+};
 function makeRawToken(s) {
   function rawToken() {
     return s;
@@ -26,8 +49,10 @@ function _escapeFactory(isLiteral, isBracket) {
       return (value && "TRUE") || "FALSE";
     } else if ("function" === valueType) {
       return value();
+    } else if (NULL === value) {
+      return "NULL";
     } else if ("object" === valueType) {
-      if (isSqlInstance(value)) {
+      if (value instanceof Sql) {
         return "(" + value.statement() + ")";
       } else if (value[0] !== undefined) {
         let token = value.map(asSqlToken).join(", ");
@@ -39,8 +64,6 @@ function _escapeFactory(isLiteral, isBracket) {
       } else {
         throw new Error("empty table as a Sql value is not allowed");
       }
-    } else if (NULL === value) {
-      return "NULL";
     } else {
       throw new Error(
         `don't know how to escape value: ${value} (${valueType})`
@@ -51,9 +74,6 @@ function _escapeFactory(isLiteral, isBracket) {
 }
 let asLiteral = _escapeFactory(true, true);
 let asToken = _escapeFactory(false, false);
-function sql__tostring(self) {
-  return self.statement();
-}
 function getCteReturningValues(opts) {
   let values = [];
   for (let col of opts.columns) {
@@ -105,14 +125,20 @@ function assembleSql(opts) {
 }
 
 class Sql {
-  toString() {
-    return this.statement()
-  };
   static r = makeRawToken;
   static DEFAULT = DEFAULT;
   static NULL = NULL;
   static asToken = asToken;
   static asLiteral = asLiteral;
+  static new(tableName) {
+    return new this(tableName)
+  }
+  constructor(tableName) {
+    this.tableName = tableName
+  }
+  toString() {
+    return this.statement()
+  };
   pcall() {
     this._pcall = true;
     return this;
@@ -185,7 +211,7 @@ class Sql {
   _getBulkInsertValuesToken(rows, columns, fallback) {
     columns = columns || this._getKeys(rows);
     rows = this._rowsToArray(rows, columns, fallback);
-    return [map(rows, asLiteral), columns];
+    return [rows.map(asLiteral), columns];
   }
   _getUpdateSetToken(columns, key, tableName) {
     let tokens = [];
@@ -297,7 +323,7 @@ class Sql {
       this.with(`d(${asToken(cteColumns)})`, subQuery);
       this._insert = `(${asToken(insertColumns)}) ${cudSelectQuery}`;
     } else if (subQuery._returningArgs) {
-      let insertColumns = flat(subQuery._returningArgs);
+      let insertColumns = subQuery._returningArgs.flat();
       let cudSelectQuery = Sql.new({ tableName: "d" }).select(insertColumns);
       this.with(`d(${asToken(insertColumns)})`, subQuery);
       this._insert = `(${asToken(insertColumns)}) ${cudSelectQuery}`;
@@ -605,9 +631,9 @@ class Sql {
         } else {
           this._setCudSubqueryInsertToken(rows);
         }
-      } else if (rows[0]) {
+      } else if (rows instanceof Array) {
         this._insert = this._getBulkInsertToken(rows, columns);
-      } else if (next(rows) !== undefined) {
+      } else if (Object.keys(rows).length) {
         this._insert = this._getInsertToken(rows, columns);
       } else {
         return this.error("can't pass empty table to sql.insert");
@@ -632,7 +658,9 @@ class Sql {
     return this;
   }
   upsert(rows, key, columns) {
-    assert(key, "you must provide key for upsert(string or table)");
+    if (!key) {
+      throw new Error("you must provide key for upsert(string or table)")
+    }
     if (rows instanceof Sql) {
       this._insert = this._getUpsertQueryToken(rows, key, columns);
     } else if (rows instanceof Array) {
@@ -654,7 +682,7 @@ class Sql {
     let cteValues = `(VALUES ${asToken(rows)})`;
     let joinCond = this._getJoinConditions(key, "V", "T");
     let valsColumns = columns.map(_prefixWith_V);
-    let insertSubquery = Sql.new({ tableName: "V" })
+    let insertSubquery = Sql.new("V")
       .select(valsColumns)
       .leftJoin("U AS T", joinCond)
       .whereNull("T." + (key[0] || key));

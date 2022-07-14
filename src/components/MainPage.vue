@@ -1,30 +1,32 @@
 <script setup>
 import { ref } from 'vue'
-import Validator from '../sql.mjs'
+import Sql from '../sql.mjs'
 
 defineProps({
   msg: String
 })
-
-const inputValue = ref('511523199901010011')
-const errorMsg = ref('')
-function validate() {
-  try {
-    Validator.sfzh(inputValue.value)
-    errorMsg.value = "test passed"
-  } catch (error) {
-    errorMsg.value = error.message
+const sqlFallback = {
+  statement() {
+    return ''
   }
 }
+const inputValue = ref('')
+const jseval = (s) => {
+  try {
+    return eval(s) || sqlFallback
+  } catch (error) {
+    return sqlFallback
+  }
+}
+
 function onInput(event) {
   inputValue.value = event.target.value
 }
 </script>
 
 <template>
-  <input :value="inputValue" @input="onInput" />
-  <button type="button" @click="validate">validate</button>
-  <span v-if="errorMsg">{{ errorMsg }}</span>
+  <textarea class="form-control" rows="5" cols="100" :value="inputValue" @input="onInput"></textarea>
+  <div>{{ jseval(inputValue).statement() }}</div>
 </template>
 
 <style scoped>
