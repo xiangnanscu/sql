@@ -1,7 +1,6 @@
 public
 logs
 node_modules
-public
 tmp
 .vscode
 .github
@@ -11,3 +10,4 @@ vite.config.js
 yarn.lock
 src/*
 !src/sql.mjs
+!src/sql.test.mjs
