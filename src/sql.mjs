@@ -151,10 +151,12 @@ class Sql {
     return this;
   }
   error(errMsg) {
-    if (this._pcall) {
+    if (typeof errMsg == 'string') {
       throw new Error(errMsg);
+    } else if (errMsg instanceof Error) {
+      throw errMsg
     } else {
-      throw new Error(errMsg);
+      throw errMsg
     }
   }
   _getKeys(rows) {
