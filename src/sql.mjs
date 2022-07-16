@@ -1,5 +1,12 @@
 
 let NULL = {}
+function assert(bool, errMsg) {
+  if (!bool) {
+    throw new Error(errMsg)
+  } else {
+    return bool
+  }
+}
 const stringFormat = (s, ...varargs) => {
   let status = 0;
   let res = [];
