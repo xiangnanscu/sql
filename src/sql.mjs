@@ -694,10 +694,10 @@ class Sql {
     let insertSubquery = Sql.new("V")
       .select(valsColumns)
       .leftJoin("U AS T", joinCond)
-      .whereNull("T." + (key[0] || key));
+      .whereNull("T." + (Array.isArray(key) ? key[0] : key));
     let updatedSubquery;
     if (
-      (typeof key === "object" && key.length === columns.length) ||
+      (Array.isArray(key) && key.length === columns.length) ||
       columns.length === 1
     ) {
       updatedSubquery = Sql.new("V")
