@@ -1,5 +1,12 @@
 
 let NULL = {}
+function assert(bool, errMsg) {
+  if (!bool) {
+    throw new Error(errMsg)
+  } else {
+    return bool
+  }
+}
 const stringFormat = (s, ...varargs) => {
   let status = 0;
   let res = [];
@@ -144,10 +151,12 @@ class Sql {
     return this;
   }
   error(errMsg) {
-    if (this._pcall) {
+    if (typeof errMsg == 'string') {
       throw new Error(errMsg);
+    } else if (errMsg instanceof Error) {
+      throw errMsg
     } else {
-      throw new Error(errMsg);
+      throw errMsg
     }
   }
   _getKeys(rows) {
