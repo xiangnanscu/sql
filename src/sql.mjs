@@ -317,14 +317,14 @@ class Sql {
       let cr = subQuery._cteReturning;
       let cteColumns = cr.columns;
       let insertColumns = addTable(cteColumns, cr.literalColumns);
-      let cudSelectQuery = Sql.new({ tableName: "d" })
+      let cudSelectQuery = Sql.new("d")
         .select(cteColumns)
         .selectLiteral(cr.literals);
       this.with(`d(${asToken(cteColumns)})`, subQuery);
       this._insert = `(${asToken(insertColumns)}) ${cudSelectQuery}`;
     } else if (subQuery._returningArgs) {
       let insertColumns = subQuery._returningArgs.flat();
-      let cudSelectQuery = Sql.new({ tableName: "d" }).select(insertColumns);
+      let cudSelectQuery = Sql.new("d").select(insertColumns);
       this.with(`d(${asToken(insertColumns)})`, subQuery);
       this._insert = `(${asToken(insertColumns)}) ${cudSelectQuery}`;
     }
@@ -691,11 +691,11 @@ class Sql {
       (typeof key === "object" && key.length === columns.length) ||
       columns.length === 1
     ) {
-      updatedSubquery = Sql.new({ tableName: "V" })
+      updatedSubquery = Sql.new("V")
         .select(valsColumns)
         .join(this.tableName + " AS T", joinCond);
     } else {
-      updatedSubquery = Sql.new({ tableName: this.tableName, _as: "T" })
+      updatedSubquery = Sql.new(this.tableName).as("T")
         .update(this._getUpdateSetToken(columns, key, "V"))
         .from("V")
         .where(joinCond)
