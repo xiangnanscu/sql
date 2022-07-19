@@ -38,7 +38,7 @@ function makeRawToken(s) {
 }
 let DEFAULT = makeRawToken("DEFAULT");
 
-function _prefixWith_V(column) {
+function _prefixWithV(column) {
   return "V." + column;
 }
 function _escapeFactory(isLiteral, isBracket) {
@@ -146,10 +146,6 @@ class Sql {
   toString() {
     return this.statement()
   };
-  pcall() {
-    this._pcall = true;
-    return this;
-  }
   error(errMsg) {
     if (typeof errMsg == 'string') {
       throw new Error(errMsg);
@@ -690,7 +686,7 @@ class Sql {
     let cteName = `V(${columns.join(", ")})`;
     let cteValues = `(VALUES ${asToken(rows)})`;
     let joinCond = this._getJoinConditions(key, "V", "T");
-    let valsColumns = columns.map(_prefixWith_V);
+    let valsColumns = columns.map(_prefixWithV);
     let insertSubquery = Sql.new("V")
       .select(valsColumns)
       .leftJoin("U AS T", joinCond)
