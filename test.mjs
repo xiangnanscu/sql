@@ -255,15 +255,19 @@ Sql.new("usr")
   .select("a", "b")
   .union(Sql.new("usr").select("c", "d"))
   .union(Sql.new("usr").select("e", "f"));`
-for (const line of sqlLines.split(';')) {
-  if (!line) {
-    continue
-  }
-  console.log(`${line} =>`);
-  console.log(`  ${eval(line).statement()}`);
 
-}
+// for (const line of sqlLines.split(';')) {
+//   if (!line) {
+//     continue
+//   }
+//   console.log(`${line} =>`);
+//   console.log(`  ${eval(line).statement()}`);
+
+// }
 
 test('select', () => {
   expect(Sql.new("usr").select("id", "name", "age").statement()).toBe("SELECT id, name, age FROM usr")
+});
+test('where subquery', () => {
+  expect(Sql.new("usr").where({ name: Sql.new("usr").select("name") }).statement()).toBe("SELECT * FROM usr WHERE name = (SELECT name FROM usr)")
 });

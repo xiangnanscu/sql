@@ -32,6 +32,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^2.3.3",
     "jest": "^28.1.2",
+    "typedoc": "^0.23.8",
     "vite": "^2.9.9",
     "vue": "^3.2.25"
   }
