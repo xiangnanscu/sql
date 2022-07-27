@@ -11,12 +11,12 @@ type SqlAssembleOpts = {
   tableName: string;
   with?: string;
   join?: string;
-  distinct?: string;
+  distinct?: boolean;
   returning?: string;
   cteReturning?: CteReturningOpts;
   insert?: string;
   update?: string;
-  delete?: string;
+  delete?: boolean;
   using?: string;
   select?: string;
   from?: string;
@@ -24,19 +24,19 @@ type SqlAssembleOpts = {
   group?: string;
   having?: string;
   order?: string;
-  limit?: string;
-  offset?: string;
+  limit?: number;
+  offset?: number;
 };
 
-const NULL = {};
-
-function assert(bool: boolean, errMsg: string | undefined) {
-  if (!bool) {
-    throw new Error(errMsg);
-  } else {
-    return bool;
+function makeRawToken(s: string) {
+  function rawToken() {
+    return s;
   }
+  return rawToken;
 }
+const DEFAULT = makeRawToken("DEFAULT");
+const NULL = makeRawToken("NULL");
+
 const stringFormat = (s: string, ...varargs: string[]): string => {
   let status = 0;
   let res: string[] = [];
@@ -60,13 +60,6 @@ const stringFormat = (s: string, ...varargs: string[]): string => {
   }
   return res.join("");
 };
-function makeRawToken(s: string) {
-  function rawToken() {
-    return s;
-  }
-  return rawToken;
-}
-const DEFAULT = makeRawToken("DEFAULT");
 
 function _prefixWithV(column: string) {
   return "V." + column;
@@ -86,7 +79,7 @@ function _escapeFactory(isLiteral: boolean, isBracket: boolean): SqlSerializer {
       return value === true ? "TRUE" : "FALSE";
     } else if ("function" === typeof value) {
       return value();
-    } else if (NULL === value || null === value) {
+    } else if (null === value) {
       return "NULL";
     } else if (value instanceof Sql) {
       return "(" + value.statement() + ")";
@@ -162,7 +155,7 @@ function assembleSql(opts: SqlAssembleOpts): string {
   return (opts.with && `WITH ${opts.with} ${statement}`) || statement;
 }
 
-class Sql {
+export class Sql {
   static r = makeRawToken;
   static DEFAULT = DEFAULT;
   static NULL = NULL;
@@ -175,13 +168,13 @@ class Sql {
   _as?: string;
   _with?: string;
   _join?: string;
-  _distinct?: string;
+  _distinct?: boolean;
   _returning?: string;
   _cteReturning?: CteReturningOpts;
   _returningArgs?: DBValue[];
   _insert?: string;
   _update?: string;
-  _delete?: string;
+  _delete?: boolean;
   _using?: string;
   _select?: string;
   _from?: string;
@@ -189,8 +182,8 @@ class Sql {
   _group?: string;
   _having?: string;
   _order?: string;
-  _limit?: string;
-  _offset?: string;
+  _limit?: number;
+  _offset?: number;
   _union?: Sql | string;
   _unionAll?: Sql | string;
   _except?: Sql | string;
@@ -231,7 +224,7 @@ class Sql {
     }
     return columns;
   }
-  _rowsToArray(rows: Row[], columns: string[], fallback: any): DBValue[][] {
+  _rowsToArray(rows: Row[], columns: string[], fallback = DEFAULT): DBValue[][] {
     let c = columns.length;
     let n = rows.length;
     let res: DBValue[][] = new Array(n);
@@ -250,7 +243,7 @@ class Sql {
     }
     return res;
   }
-  _getInsertValuesToken(row: Row, columns: string[]): [string, string[]] {
+  _getInsertValuesToken(row: Row, columns?: string[]): [string, string[]] {
     let valueList: DBValue[] = [];
     if (!columns) {
       columns = [];
@@ -270,7 +263,7 @@ class Sql {
     }
     return [asLiteral(valueList), columns];
   }
-  _getBulkInsertValuesToken(rows: Row[], columns: string[], fallback: any): [string[], string[]] {
+  _getBulkInsertValuesToken(rows: Row[], columns?: string[], fallback = DEFAULT): [string[], string[]] {
     columns = columns || this._getKeys(rows);
     return [this._rowsToArray(rows, columns, fallback).map(asLiteral), columns];
   }
@@ -332,7 +325,7 @@ class Sql {
       return s;
     }
   }
-  _getUpdateToken(row: Row, columns: string[]) {
+  _getUpdateToken(row: Row, columns?: string[]) {
     let kv: string[] = [];
     if (!columns) {
       for (let [k, v] of Object.entries(row)) {
@@ -355,15 +348,15 @@ class Sql {
       return asToken(name);
     }
   }
-  _getInsertToken(row: Row, columns: string[]) {
+  _getInsertToken(row: Row, columns?: string[]) {
     const [insertValues, insertColumns] = this._getInsertValuesToken(row, columns);
     return `(${asToken(insertColumns)}) VALUES ${insertValues}`;
   }
-  _getBulkInsertToken(rows: Row[], columns: string[]) {
+  _getBulkInsertToken(rows: Row[], columns?: string[]) {
     const [insertValuesArray, insertColumns] = this._getBulkInsertValuesToken(rows, columns, DEFAULT);
     return `(${asToken(insertColumns)}) VALUES ${asToken(insertValuesArray)}`;
   }
-  _setSelectSubqueryInsertToken(subQuery: Sql, columns: string[]) {
+  _setSelectSubqueryInsertToken(subQuery: Sql, columns?: string[]) {
     const columnsToken = asToken(columns || subQuery._select || "");
     if (columnsToken !== "") {
       this._insert = `(${columnsToken}) ${subQuery.statement()}`;
@@ -389,10 +382,10 @@ class Sql {
   _getUpsertToken(row: Row, key: string | string[], columns: string[]) {
     const [valuesToken, upsertColumns] = this._getInsertValuesToken(row, columns);
     let insertToken = `(${asToken(upsertColumns)}) VALUES ${valuesToken} ON CONFLICT (${this._getSelectToken(key)})`;
-    if ((Array.isArray(key) && key.length === columns.length) || columns.length === 1) {
+    if ((Array.isArray(key) && key.length === upsertColumns.length) || upsertColumns.length === 1) {
       return `${insertToken} DO NOTHING`;
     } else {
-      return `${insertToken} DO UPDATE SET ${this._getUpdateSetToken(columns, key, "EXCLUDED")}`;
+      return `${insertToken} DO UPDATE SET ${this._getUpdateSetToken(upsertColumns, key, "EXCLUDED")}`;
     }
   }
   _getBulkUpsertToken(rows: Row[], key: string | string[], columns: string[]) {
@@ -400,10 +393,10 @@ class Sql {
     let insertToken = `(${asToken(insertColumns)}) VALUES ${asToken(
       insertValuesArray
     )} ON CONFLICT (${this._getSelectToken(key)})`;
-    if ((Array.isArray(key) && key.length === columns.length) || columns.length === 1) {
+    if ((Array.isArray(key) && key.length === insertColumns.length) || insertColumns.length === 1) {
       return `${insertToken} DO NOTHING`;
     } else {
-      return `${insertToken} DO UPDATE SET ${this._getUpdateSetToken(columns, key, "EXCLUDED")}`;
+      return `${insertToken} DO UPDATE SET ${this._getUpdateSetToken(insertColumns, key, "EXCLUDED")}`;
     }
   }
   _getUpsertQueryToken(rows: Sql, key: string | string[], columns: string[]) {
@@ -457,7 +450,7 @@ class Sql {
       return `(${cols}) ${operator} ${range}`;
     }
   }
-  _getUpdateQueryToken(subSelect: Sql, columns: DBValue[]) {
+  _getUpdateQueryToken(subSelect: Sql, columns?: DBValue[]) {
     return `(${(columns && this._getSelectToken(columns)) || subSelect._select}) = (${subSelect.statement()})`;
   }
   _getJoinConditions(key: string | string[], leftTable: string, rightTable: string) {
@@ -470,7 +463,7 @@ class Sql {
     }
     return res.join(" AND ");
   }
-  _getCteValuesLiteral(rows: Row[], columns: string[]) {
+  _getCteValuesLiteral(rows: Row[], columns?: string[]) {
     return this._getBulkInsertValuesToken(rows, columns, NULL);
   }
   _handleWhereToken(whereToken: string | undefined, tpl: string) {
@@ -508,9 +501,12 @@ class Sql {
         let res;
         try {
           res = first.call(this);
-          if (res === this) {
+          if (res instanceof Sql) {
             let groupWhere = this._where;
             this._where = _where;
+            if (!groupWhere) {
+              return this.error("no condition made from condition function");
+            }
             return groupWhere;
           } else {
             this._where = _where;
@@ -626,47 +622,39 @@ class Sql {
     return this;
   }
   withValues(name: string, rows: Row[]) {
-    let columns = this._getKeys(rows[0]);
-    [rows, columns] = this._getCteValuesLiteral(rows, columns);
-    let cteName = `${name}(${columns.join(", ")})`;
-    let cteValues = `(VALUES ${asToken(rows)})`;
+    const columns = this._getKeys(rows[0]);
+    const [withRows, withColumns] = this._getCteValuesLiteral(rows, columns);
+    const cteName = `${name}(${withColumns.join(", ")})`;
+    const cteValues = `(VALUES ${asToken(withRows)})`;
     return this.with(cteName, cteValues);
   }
-  insert(rows: { _select?: any } | undefined, columns: any) {
-    if (typeof rows === "object") {
-      if (rows instanceof Sql) {
-        if (rows._select) {
-          this._setSelectSubqueryInsertToken(rows, columns);
-        } else {
-          this._setCUDSubqueryInsertToken(rows);
-        }
-      } else if (rows instanceof Array) {
-        this._insert = this._getBulkInsertToken(rows, columns);
-      } else if (Object.keys(rows).length) {
-        this._insert = this._getInsertToken(rows, columns);
+  insert(rows: Row | Row[] | Sql, columns?: string[]) {
+    if (rows instanceof Sql) {
+      if (rows._select) {
+        this._setSelectSubqueryInsertToken(rows, columns);
       } else {
-        return this.error("can't pass empty table to sql.insert");
+        this._setCUDSubqueryInsertToken(rows);
       }
-    } else if (rows !== undefined) {
-      this._insert = rows;
+    } else if (rows instanceof Array) {
+      this._insert = this._getBulkInsertToken(rows, columns);
+    } else if (Object.keys(rows).length) {
+      this._insert = this._getInsertToken(rows, columns);
     } else {
-      return this.error("can't pass nil to sql.insert");
+      return this.error("can't pass empty table to sql.insert");
     }
     return this;
   }
-  update(row: string, columns: undefined) {
-    if (typeof row === "object") {
-      if (!(row instanceof Sql)) {
-        this._update = this._getUpdateToken(row, columns);
-      } else {
-        this._update = this._getUpdateQueryToken(row, columns);
-      }
-    } else {
+  update(row: Row | Sql | string, columns?: string[]) {
+    if (typeof row == "string") {
       this._update = row;
+    } else if (!(row instanceof Sql)) {
+      this._update = this._getUpdateToken(row, columns);
+    } else {
+      this._update = this._getUpdateQueryToken(row, columns);
     }
     return this;
   }
-  upsert(rows: any, key: any, columns: any) {
+  upsert(rows: Row | Row[] | Sql, key: string | string[], columns?: any) {
     if (!key) {
       throw new Error("you must provide key for upsert(string or table)");
     }
@@ -682,28 +670,28 @@ class Sql {
   isInstance(row: any) {
     return row instanceof Sql;
   }
-  merge(rows: string | any[], key: string | any[], columns: any[]) {
+  merge(rows: Row[], key: string | string[], columns?: string[]) {
     if (rows.length === 0) {
       return this.error("empty rows passed to merge");
     }
-    [rows, columns] = this._getCteValuesLiteral(rows, columns);
-    let cteName = `V(${columns.join(", ")})`;
-    let cteValues = `(VALUES ${asToken(rows)})`;
+    const [mergeRows, mergeColumns] = this._getCteValuesLiteral(rows, columns);
+    let cteName = `V(${mergeColumns.join(", ")})`;
+    let cteValues = `(VALUES ${asToken(mergeRows)})`;
     let joinCond = this._getJoinConditions(key, "V", "T");
-    let valsColumns = columns.map(_prefixWithV);
+    let valsColumns = mergeColumns.map(_prefixWithV);
     let insertSubquery = Sql.new("V")
       .select(valsColumns)
       .leftJoin("U AS T", joinCond)
       .whereNull("T." + (Array.isArray(key) ? key[0] : key));
     let updatedSubquery;
-    if ((Array.isArray(key) && key.length === columns.length) || columns.length === 1) {
+    if ((Array.isArray(key) && key.length === mergeColumns.length) || mergeColumns.length === 1) {
       updatedSubquery = Sql.new("V")
         .select(valsColumns)
         .join(this.tableName + " AS T", joinCond);
     } else {
       updatedSubquery = Sql.new(this.tableName)
         .as("T")
-        .update(this._getUpdateSetToken(columns, key, "V"))
+        .update(this._getUpdateSetToken(mergeColumns, key, "V"))
         .from("V")
         .where(joinCond)
         .returning(valsColumns);
@@ -711,50 +699,60 @@ class Sql {
     this.with(cteName, cteValues).with("U", updatedSubquery);
     return Sql.prototype.insert.call(this, insertSubquery, columns);
   }
-  updates(rows: { _returningArgs: any[]; length: number }, key: any, columns: any[]) {
-    if (this.isInstance(rows)) {
-      columns = columns || rows._returningArgs.flat();
-      let cteName = `V(${columns.join(", ")})`;
+  updates(rows: Row[] | Sql, key: string | string[], columns?: string[]) {
+    if (rows instanceof Sql) {
+      const updatesColumns =
+        columns || (rows._returningArgs?.flat().filter((e) => typeof e === "string") as string[]) || [];
+      if (!updatesColumns.length) {
+        throw new Error("columns is required when using subquery");
+      }
+      let cteName = `V(${updatesColumns.join(", ")})`;
       let joinCond = this._getJoinConditions(key, "V", this._as || this.tableName);
       this.with(cteName, rows);
-      return Sql.prototype.update.call(this, this._getUpdateSetToken(columns, key, "V")).from("V").where(joinCond);
+      return Sql.prototype.update
+        .call(this, this._getUpdateSetToken(updatesColumns, key, "V"))
+        .from("V")
+        .where(joinCond);
     } else if (rows.length === 0) {
       return this.error("empty rows passed to updates");
     } else {
-      [rows, columns] = this._getCteValuesLiteral(rows, columns);
-      let cteName = `V(${columns.join(", ")})`;
-      let cteValues = `(VALUES ${asToken(rows)})`;
+      const [updatesRows, updatesColumns] = this._getCteValuesLiteral(rows, columns);
+      let cteName = `V(${updatesColumns.join(", ")})`;
+      let cteValues = `(VALUES ${asToken(updatesRows)})`;
       let joinCond = this._getJoinConditions(key, "V", this._as || this.tableName);
       this.with(cteName, cteValues);
-      return Sql.prototype.update.call(this, this._getUpdateSetToken(columns, key, "V")).from("V").where(joinCond);
+      return Sql.prototype.update
+        .call(this, this._getUpdateSetToken(updatesColumns, key, "V"))
+        .from("V")
+        .where(joinCond);
     }
   }
-  gets(keys: string | any[]) {
+  gets(keys: Row[]) {
     if (keys.length === 0) {
       return this.error("empty keys passed to gets");
     }
     let columns = this._getKeys(keys[0]);
-    [keys, columns] = this._getCteValuesLiteral(keys, columns);
-    let joinCond = this._getJoinConditions(columns, "V", this._as || this.tableName);
-    let cteName = `V(${columns.join(", ")})`;
-    let cteValues = `(VALUES ${asToken(keys)})`;
+    let [getskeys, getsColumns] = this._getCteValuesLiteral(keys, columns);
+    let joinCond = this._getJoinConditions(getsColumns, "V", this._as || this.tableName);
+    let cteName = `V(${getsColumns.join(", ")})`;
+    let cteValues = `(VALUES ${asToken(getskeys)})`;
     return this.with(cteName, cteValues).rightJoin("V", joinCond);
   }
-  mergeGets(rows: any[], keys: any) {
+  mergeGets(rows: Row[], keys: string | string[]) {
     let columns = this._getKeys(rows[0]);
-    [rows, columns] = this._getCteValuesLiteral(rows, columns);
+    let [getsRows, getsColumns] = this._getCteValuesLiteral(rows, columns);
     let joinCond = this._getJoinConditions(keys, "V", this._as || this.tableName);
-    let cteName = `V(${columns.join(", ")})`;
-    let cteValues = `(VALUES ${asToken(rows)})`;
+    let cteName = `V(${getsColumns.join(", ")})`;
+    let cteValues = `(VALUES ${asToken(getsRows)})`;
     return Sql.prototype.select.call(this, "V.*").with(cteName, cteValues).rightJoin("V", joinCond);
   }
-  copy() {
+  copy(): this {
     return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
   }
-  delete(...varargs: any[]) {
+  delete(first: Condition, second?: DBValue, third?: DBValue) {
     this._delete = true;
-    if (varargs.length) {
-      this.where(...varargs);
+    if (first) {
+      this.where(first, second, third);
     }
     return this;
   }
@@ -762,8 +760,8 @@ class Sql {
     this._distinct = true;
     return this;
   }
-  select(...varargs: any[]) {
-    let s = this._getSelectToken(...varargs);
+  select(first: DBValue, second?: DBValue, ...varargs: DBValue[]) {
+    let s = this._getSelectToken(first, second, ...varargs);
     if (!this._select) {
       this._select = s;
     } else if (s !== undefined && s !== "") {
@@ -771,8 +769,8 @@ class Sql {
     }
     return this;
   }
-  selectLiteral(...varargs: any[]) {
-    let s = this._getSelectTokenLiteral(...varargs);
+  selectLiteral(first: DBValue, second?: DBValue, ...varargs: DBValue[]) {
+    let s = this._getSelectTokenLiteral(first, second, ...varargs);
     if (!this._select) {
       this._select = s;
     } else if (s !== undefined && s !== "") {
@@ -780,8 +778,8 @@ class Sql {
     }
     return this;
   }
-  returning(...varargs: any[]) {
-    let s = this._getSelectToken(...varargs);
+  returning(first: DBValue, second?: DBValue, ...varargs: DBValue[]) {
+    let s = this._getSelectToken(first, second, ...varargs);
     if (!this._returning) {
       this._returning = s;
     } else if (s !== undefined && s !== "") {
@@ -790,143 +788,143 @@ class Sql {
       return this;
     }
     if (this._returningArgs) {
-      this._returningArgs = [this._returningArgs, ...varargs];
+      this._returningArgs = [this._returningArgs, first, second, ...varargs];
     } else {
-      this._returningArgs = [...varargs];
+      this._returningArgs = [first, second, ...varargs];
     }
     return this;
   }
-  returningLiteral(...varargs: any[]) {
-    let s = this._getSelectTokenLiteral(...varargs);
+  returningLiteral(first: DBValue, second: DBValue, ...varargs: DBValue[]) {
+    let s = this._getSelectTokenLiteral(first, second, ...varargs);
     if (!this._returning) {
       this._returning = s;
     } else if (s !== undefined && s !== "") {
       this._returning = this._returning + (", " + s);
     }
     if (this._returningArgs) {
-      this._returningArgs = [this._returningArgs, ...varargs];
+      this._returningArgs = [this._returningArgs, first, second, ...varargs];
     } else {
-      this._returningArgs = [...varargs];
+      this._returningArgs = [first, second, ...varargs];
     }
     return this;
   }
-  cteReturning(opts: any) {
+  cteReturning(opts: CteReturningOpts) {
     this._cteReturning = opts;
     return this;
   }
-  group(...varargs: any[]) {
+  group(first: string, second?: string, ...varargs: string[]) {
     if (!this._group) {
-      this._group = this._getSelectToken(...varargs);
+      this._group = this._getSelectToken(first, second, ...varargs);
     } else {
-      this._group = this._group + (", " + this._getSelectToken(...varargs));
+      this._group = this._group + (", " + this._getSelectToken(first, second, ...varargs));
     }
     return this;
   }
-  groupBy(...varargs: any[]) {
-    return this.group(...varargs);
+  groupBy(first: string, second?: string, ...varargs: string[]) {
+    return this.group(first, second, ...varargs);
   }
-  order(...varargs: any[]) {
+  order(first: string, second?: string, ...varargs: string[]) {
     if (!this._order) {
-      this._order = this._getSelectToken(...varargs);
+      this._order = this._getSelectToken(first, second, ...varargs);
     } else {
-      this._order = this._order + (", " + this._getSelectToken(...varargs));
+      this._order = this._order + (", " + this._getSelectToken(first, second, ...varargs));
     }
     return this;
   }
-  orderBy(...varargs: any[]) {
-    return this.order(...varargs);
+  orderBy(first: string, second?: string, ...varargs: string[]) {
+    return this.order(first, second, ...varargs);
   }
-  _getArgsToken(...varargs: any[]) {
-    return this._getSelectToken(...varargs);
+  _getArgsToken(first: string, second?: string, ...varargs: string[]) {
+    return this._getSelectToken(first, second, ...varargs);
   }
-  using(...varargs: any[]) {
+  using(first: string, second?: string, ...varargs: string[]) {
     this._delete = true;
-    this._using = this._getArgsToken(...varargs);
+    this._using = this._getArgsToken(first, second, ...varargs);
     return this;
   }
-  from(...varargs: string[]) {
+  from(first: string, second?: string, ...varargs: string[]) {
     if (!this._from) {
-      this._from = this._getArgsToken(...varargs);
+      this._from = this._getArgsToken(first, second, ...varargs);
     } else {
-      this._from = this._from + (", " + this._getArgsToken(...varargs));
+      this._from = this._from + (", " + this._getArgsToken(first, second, ...varargs));
     }
     return this;
   }
   getTable() {
     return (this._as === undefined && this.tableName) || this.tableName + (" AS " + this._as);
   }
-  join(...varargs: string[]) {
-    let joinToken = this._getInnerJoin(...varargs);
+  join(rightTable: string, conditions?: string, ...varargs: string[]) {
+    let joinToken = this._getInnerJoin(rightTable, conditions, ...varargs);
     this._from = `${this._from || this.getTable()} ${joinToken}`;
     return this;
   }
-  innerJoin(...varargs: any[]) {
-    return this.join(...varargs);
+  innerJoin(rightTable: string, conditions?: string, ...varargs: string[]) {
+    return this.join(rightTable, conditions, ...varargs);
   }
-  leftJoin(...varargs: string[]) {
-    let joinToken = this._getLeftJoin(...varargs);
+  leftJoin(rightTable: string, conditions?: string, ...varargs: string[]) {
+    let joinToken = this._getLeftJoin(rightTable, conditions, ...varargs);
     this._from = `${this._from || this.getTable()} ${joinToken}`;
     return this;
   }
-  rightJoin(...varargs: string[]) {
-    let joinToken = this._getRightJoin(...varargs);
+  rightJoin(rightTable: string, conditions?: string, ...varargs: string[]) {
+    let joinToken = this._getRightJoin(rightTable, conditions, ...varargs);
     this._from = `${this._from || this.getTable()} ${joinToken}`;
     return this;
   }
-  fullJoin(...varargs: any[]) {
-    let joinToken = this._getFullJoin(...varargs);
+  fullJoin(rightTable: string, conditions?: string, ...varargs: string[]) {
+    let joinToken = this._getFullJoin(rightTable, conditions, ...varargs);
     this._from = `${this._from || this.getTable()} ${joinToken}`;
     return this;
   }
-  limit(n: any) {
+  limit(n: number) {
     this._limit = n;
     return this;
   }
-  offset(n: any) {
+  offset(n: number) {
     this._offset = n;
     return this;
   }
-  where(first: string, ...varargs: undefined[]) {
-    let whereToken = this._getConditionToken(first, ...varargs);
+  where(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionToken(first, second, third);
     return this._handleWhereToken(whereToken, "(%s) AND (%s)");
   }
-  whereOr(first: any, ...varargs: any[]) {
-    let whereToken = this._getConditionTokenOr(first, ...varargs);
+  whereOr(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionTokenOr(first, second, third);
     return this._handleWhereToken(whereToken, "(%s) AND (%s)");
   }
-  orWhereOr(first: any, ...varargs: any[]) {
-    let whereToken = this._getConditionTokenOr(first, ...varargs);
+  orWhereOr(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionTokenOr(first, second, third);
     return this._handleWhereToken(whereToken, "%s OR %s");
   }
-  whereNot(first: any, ...varargs: any[]) {
-    let whereToken = this._getConditionTokenNot(first, ...varargs);
+  whereNot(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionTokenNot(first, second, third);
     return this._handleWhereToken(whereToken, "(%s) AND (%s)");
   }
-  orWhere(first: any, ...varargs: any[]) {
-    let whereToken = this._getConditionToken(first, ...varargs);
+  orWhere(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionToken(first, second, third);
     return this._handleWhereToken(whereToken, "%s OR %s");
   }
-  orWhereNot(first: any, ...varargs: any[]) {
-    let whereToken = this._getConditionTokenNot(first, ...varargs);
+  orWhereNot(first: Condition, second?: DBValue, third?: DBValue) {
+    let whereToken = this._getConditionTokenNot(first, second, third);
     return this._handleWhereToken(whereToken, "%s OR %s");
   }
-  whereExists(builder: any) {
+  whereExists(builder: Sql) {
     if (this._where) {
-      this._where = `(${this._where}) AND EXISTS (${builder})`;
+      this._where = `(${this._where}) AND EXISTS (${builder.statement()})`;
     } else {
-      this._where = `EXISTS (${builder})`;
+      this._where = `EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  whereNotExists(builder: any) {
+  whereNotExists(builder: Sql) {
     if (this._where) {
-      this._where = `(${this._where}) AND NOT EXISTS (${builder})`;
+      this._where = `(${this._where}) AND NOT EXISTS (${builder.statement()})`;
     } else {
-      this._where = `NOT EXISTS (${builder})`;
+      this._where = `NOT EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  whereIn(cols: any, range: any) {
+  whereIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let inToken = this._getInToken(cols, range);
     if (this._where) {
       this._where = `(${this._where}) AND ${inToken}`;
@@ -935,7 +933,7 @@ class Sql {
     }
     return this;
   }
-  whereNotIn(cols: any, range: any) {
+  whereNotIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let notInToken = this._getInToken(cols, range, "NOT IN");
     if (this._where) {
       this._where = `(${this._where}) AND ${notInToken}`;
@@ -960,7 +958,7 @@ class Sql {
     }
     return this;
   }
-  whereBetween(col: any, low: any, high: any) {
+  whereBetween(col: string, low: number, high: number) {
     if (this._where) {
       this._where = `(${this._where}) AND (${col} BETWEEN ${low} AND ${high})`;
     } else {
@@ -968,7 +966,7 @@ class Sql {
     }
     return this;
   }
-  whereNotBetween(col: any, low: any, high: any) {
+  whereNotBetween(col: string, low: number, high: number) {
     if (this._where) {
       this._where = `(${this._where}) AND (${col} NOT BETWEEN ${low} AND ${high})`;
     } else {
@@ -986,23 +984,23 @@ class Sql {
     }
     return this;
   }
-  orWhereExists(builder: any) {
+  orWhereExists(builder: Sql) {
     if (this._where) {
-      this._where = `${this._where} OR EXISTS (${builder})`;
+      this._where = `${this._where} OR EXISTS (${builder.statement()})`;
     } else {
       this._where = `EXISTS (${builder})`;
     }
     return this;
   }
-  orWhereNotExists(builder: any) {
+  orWhereNotExists(builder: Sql) {
     if (this._where) {
-      this._where = `${this._where} OR NOT EXISTS (${builder})`;
+      this._where = `${this._where} OR NOT EXISTS (${builder.statement()})`;
     } else {
       this._where = `NOT EXISTS (${builder})`;
     }
     return this;
   }
-  orWhereIn(cols: any, range: any) {
+  orWhereIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let inToken = this._getInToken(cols, range);
     if (this._where) {
       this._where = `${this._where} OR ${inToken}`;
@@ -1011,7 +1009,7 @@ class Sql {
     }
     return this;
   }
-  orWhereNotIn(cols: any, range: any) {
+  orWhereNotIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let notInToken = this._getInToken(cols, range, "NOT IN");
     if (this._where) {
       this._where = `${this._where} OR ${notInToken}`;
@@ -1036,7 +1034,7 @@ class Sql {
     }
     return this;
   }
-  orWhereBetween(col: any, low: any, high: any) {
+  orWhereBetween(col: string, low: number, high: number) {
     if (this._where) {
       this._where = `${this._where} OR (${col} BETWEEN ${low} AND ${high})`;
     } else {
@@ -1044,7 +1042,7 @@ class Sql {
     }
     return this;
   }
-  orWhereNotBetween(col: any, low: any, high: any) {
+  orWhereNotBetween(col: string, low: number, high: number) {
     if (this._where) {
       this._where = `${this._where} OR (${col} NOT BETWEEN ${low} AND ${high})`;
     } else {
@@ -1062,39 +1060,39 @@ class Sql {
     }
     return this;
   }
-  having(...varargs: any[]) {
+  having(first: Condition, second?: DBValue, third?: DBValue) {
     if (this._having) {
-      this._having = `(${this._having}) AND (${this._getConditionToken(...varargs)})`;
+      this._having = `(${this._having}) AND (${this._getConditionToken(first, second, third)})`;
     } else {
-      this._having = this._getConditionToken(...varargs);
+      this._having = this._getConditionToken(first, second, third);
     }
     return this;
   }
-  havingNot(...varargs: any[]) {
+  havingNot(first: Condition, second?: DBValue, third?: DBValue) {
     if (this._having) {
-      this._having = `(${this._having}) AND (${this._getConditionTokenNot(...varargs)})`;
+      this._having = `(${this._having}) AND (${this._getConditionTokenNot(first, second, third)})`;
     } else {
-      this._having = this._getConditionTokenNot(...varargs);
+      this._having = this._getConditionTokenNot(first, second, third);
     }
     return this;
   }
-  havingExists(builder: any) {
+  havingExists(builder: Sql) {
     if (this._having) {
-      this._having = `(${this._having}) AND EXISTS (${builder})`;
+      this._having = `(${this._having}) AND EXISTS (${builder.statement()})`;
     } else {
-      this._having = `EXISTS (${builder})`;
+      this._having = `EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  havingNotExists(builder: any) {
+  havingNotExists(builder: Sql) {
     if (this._having) {
-      this._having = `(${this._having}) AND NOT EXISTS (${builder})`;
+      this._having = `(${this._having}) AND NOT EXISTS (${builder.statement()})`;
     } else {
-      this._having = `NOT EXISTS (${builder})`;
+      this._having = `NOT EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  havingIn(cols: any, range: any) {
+  havingIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let inToken = this._getInToken(cols, range);
     if (this._having) {
       this._having = `(${this._having}) AND ${inToken}`;
@@ -1103,7 +1101,7 @@ class Sql {
     }
     return this;
   }
-  havingNotIn(cols: any, range: any) {
+  havingNotIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let notInToken = this._getInToken(cols, range, "NOT IN");
     if (this._having) {
       this._having = `(${this._having}) AND ${notInToken}`;
@@ -1128,7 +1126,7 @@ class Sql {
     }
     return this;
   }
-  havingBetween(col: any, low: any, high: any) {
+  havingBetween(col: string, low: number, high: number) {
     if (this._having) {
       this._having = `(${this._having}) AND (${col} BETWEEN ${low} AND ${high})`;
     } else {
@@ -1136,7 +1134,7 @@ class Sql {
     }
     return this;
   }
-  havingNotBetween(col: any, low: any, high: any) {
+  havingNotBetween(col: string, low: number, high: number) {
     if (this._having) {
       this._having = `(${this._having}) AND (${col} NOT BETWEEN ${low} AND ${high})`;
     } else {
@@ -1144,7 +1142,7 @@ class Sql {
     }
     return this;
   }
-  havingRaw(token: any) {
+  havingRaw(token: string) {
     if (this._having) {
       this._having = `(${this._having}) AND (${token})`;
     } else {
@@ -1152,39 +1150,39 @@ class Sql {
     }
     return this;
   }
-  orHaving(...varargs: any[]) {
+  orHaving(first: Condition, second?: DBValue, third?: DBValue) {
     if (this._having) {
-      this._having = `${this._having} OR ${this._getConditionToken(...varargs)}`;
+      this._having = `${this._having} OR ${this._getConditionToken(first, second, third)}`;
     } else {
-      this._having = this._getConditionToken(...varargs);
+      this._having = this._getConditionToken(first, second, third);
     }
     return this;
   }
-  orHavingNot(...varargs: any[]) {
+  orHavingNot(first: Condition, second?: DBValue, third?: DBValue) {
     if (this._having) {
-      this._having = `${this._having} OR ${this._getConditionTokenNot(...varargs)}`;
+      this._having = `${this._having} OR ${this._getConditionTokenNot(first, second, third)}`;
     } else {
-      this._having = this._getConditionTokenNot(...varargs);
+      this._having = this._getConditionTokenNot(first, second, third);
     }
     return this;
   }
-  orHavingExists(builder: any) {
+  orHavingExists(builder: Sql) {
     if (this._having) {
-      this._having = `${this._having} OR EXISTS (${builder})`;
+      this._having = `${this._having} OR EXISTS (${builder.statement()})`;
     } else {
-      this._having = `EXISTS (${builder})`;
+      this._having = `EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  orHavingNotExists(builder: any) {
+  orHavingNotExists(builder: Sql) {
     if (this._having) {
-      this._having = `${this._having} OR NOT EXISTS (${builder})`;
+      this._having = `${this._having} OR NOT EXISTS (${builder.statement()})`;
     } else {
-      this._having = `NOT EXISTS (${builder})`;
+      this._having = `NOT EXISTS (${builder.statement()})`;
     }
     return this;
   }
-  orHavingIn(cols: any, range: any) {
+  orHavingIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let inToken = this._getInToken(cols, range);
     if (this._having) {
       this._having = `${this._having} OR ${inToken}`;
@@ -1193,7 +1191,7 @@ class Sql {
     }
     return this;
   }
-  orHavingNotIn(cols: any, range: any) {
+  orHavingNotIn(cols: string | string[], range: DBValue[] | Sql | string) {
     let notInToken = this._getInToken(cols, range, "NOT IN");
     if (this._having) {
       this._having = `${this._having} OR ${notInToken}`;
@@ -1218,7 +1216,7 @@ class Sql {
     }
     return this;
   }
-  orHavingBetween(col: any, low: any, high: any) {
+  orHavingBetween(col: string, low: number, high: number) {
     if (this._having) {
       this._having = `${this._having} OR (${col} BETWEEN ${low} AND ${high})`;
     } else {
@@ -1226,7 +1224,7 @@ class Sql {
     }
     return this;
   }
-  orHavingNotBetween(col: any, low: any, high: any) {
+  orHavingNotBetween(col: string, low: number, high: number) {
     if (this._having) {
       this._having = `${this._having} OR (${col} NOT BETWEEN ${low} AND ${high})`;
     } else {
@@ -1234,7 +1232,7 @@ class Sql {
     }
     return this;
   }
-  orHavingRaw(token: any) {
+  orHavingRaw(token: string) {
     if (this._having) {
       this._having = `${this._having} OR ${token}`;
     } else {
@@ -1243,5 +1241,3 @@ class Sql {
     return this;
   }
 }
-
-export default Sql;

@@ -1,4 +1,5 @@
-import Sql from './src/sql.mjs'
+import { Sql } from './src/sql.ts'
+
 
 let sqlLines = `Sql.new("usr").where({ i: 1, name: "foo", time: 36 });
 Sql.new("usr").select("id", "name", "age");
@@ -256,14 +257,14 @@ Sql.new("usr")
   .union(Sql.new("usr").select("c", "d"))
   .union(Sql.new("usr").select("e", "f"));`
 
-// for (const line of sqlLines.split(';')) {
-//   if (!line) {
-//     continue
-//   }
-//   console.log(`${line} =>`);
-//   console.log(`  ${eval(line).statement()}`);
+for (const line of sqlLines.split(';')) {
+  if (!line) {
+    continue
+  }
+  console.log(`${line} =>`);
+  console.log(`  ${eval(line).statement()}`);
 
-// }
+}
 
 test('select', () => {
   expect(Sql.new("usr").select("id", "name", "age").statement()).toBe("SELECT id, name, age FROM usr")
