@@ -1,4 +1,4 @@
-import { Sql } from './src/sql.ts'
+import { Sql } from './src/sql.mjs'
 
 
 let sqlLines = `Sql.new("usr").where({ i: 1, name: "foo", time: 36 });
