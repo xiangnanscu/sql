@@ -111,40 +111,40 @@ Sql.new("t")
   .where("u.id=t.id and v.id=t.id")
   .where("t.id", 30);
 Sql.new("usr").insert("(a,b,c) values (1,2,3)");
-Sql.new("usr").merge([{ phone: "13508198871", xm: "x1" }], "phone");
-Sql.new("usr").merge([{ phone: "13508198871" }], "phone");
-Sql.new("usr").upsert({ phone: "13508198871", xm: "x1" }, "phone");
+Sql.new("usr").merge([{ phone: "13888888888", xm: "x1" }], "phone");
+Sql.new("usr").merge([{ phone: "13888888888" }], "phone");
+Sql.new("usr").upsert({ phone: "13888888888", xm: "x1" }, "phone");
 Sql.new("usr").upsert(
   [
-    { phone: "13508198871", xm: "x1" },
+    { phone: "13888888888", xm: "x1" },
     { phone: "12", xm: "x2" },
   ],
   "phone"
 );
 Sql.new("usr").upsert(
   [
-    { phone: "13508198871", xm: "x1" },
+    { phone: "13888888888", xm: "x1" },
     { phone: "12", xm: "x2" },
   ],
   ["phone", "xm"]
 );
 Sql.new("usr").upsert(
   [
-    { phone: "13508198871", xm: "x1", a: 1 },
+    { phone: "13888888888", xm: "x1", a: 1 },
     { phone: "12", xm: "x2", b: 2 },
   ],
   ["phone", "xm"]
 );
 Sql.new("usr").upsert(
   [
-    { phone: "13508198871", xm: "x1", a: 1 },
+    { phone: "13888888888", xm: "x1", a: 1 },
     { phone: "12", xm: "x2", b: 2 },
   ],
   ["phone", "xm"],
   ["phone", "xm", "c"]
 );
-Sql.new("usr").upsert({ phone: "13508198871", xm: "x1" }, ["phone", "xm"]);
-Sql.new("usr").upsert({ phone: "13508198871" }, "phone");
+Sql.new("usr").upsert({ phone: "13888888888", xm: "x1" }, ["phone", "xm"]);
+Sql.new("usr").upsert({ phone: "13888888888" }, "phone");
 Sql.new("usr").delete();
 Sql.new("usr").delete({ xm: "foo" });
 Sql.new("usr").delete().where({ xm: "foo" });
@@ -181,10 +181,10 @@ Sql.new("profile").updates(
 );
 Sql.new("profile").where("usrId", Sql.new("usr").select("id").where("id", 123));
 Sql.new("t").where("isOk", ()=>true).where("id", ()=>'TRUE').whereIn("id", ()=>[1,'2',true]);
-Sql.new("usr").gets([{ phone: "13508198871" }, { phone: "13508198872" }]);
+Sql.new("usr").gets([{ phone: "13888888888" }, { phone: "13508198872" }]);
 Sql.new("usr").upsert(
   [
-    { phone: "13508198871", xm: "x1", a: 1 },
+    { phone: "13888888888", xm: "x1", a: 1 },
     { phone: "12", xm: "x2", b: 2 },
   ],
   ["phone", "xm"],
@@ -193,7 +193,7 @@ Sql.new("usr").upsert(
 Sql.new("usr")
   .merge(
     [
-      { phone: "13508198871", xm: "x1" },
+      { phone: "13888888888", xm: "x1" },
       { phone: "12", xm: "x2" },
     ],
     ["phone"]
@@ -202,7 +202,7 @@ Sql.new("usr")
 Sql.new("usr")
   .merge(
     [
-      { phone: "13508198871", xm: "x1", id: 1 },
+      { phone: "13888888888", xm: "x1", id: 1 },
       { phone: "12", xm: "x2", id: 2 },
     ],
     ["phone", "xm"]
@@ -217,7 +217,7 @@ Sql.new("usr")
 Sql.new("usr")
   .merge(
     [
-      { phone: "13508198871", xm: "x1" },
+      { phone: "13888888888", xm: "x1" },
       { phone: "12", xm: "x2" },
     ],
     ["phone"]
@@ -246,7 +246,7 @@ Sql.new("usr").insert(
 let t = `Sql.new("usr")
   .merge(
     [
-      { phone: "13508198871", xm: "x1" },
+      { phone: "13888888888", xm: "x1" },
       { phone: "12", xm: "x2" },
     ],
     ["phone"]
